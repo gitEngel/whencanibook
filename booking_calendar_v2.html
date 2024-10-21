@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>When Can I Book It?</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+        }
+        h1, h2 {
+            text-align: center;
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-top: 50px;
+        }
+        .calendar-container {
+            display: none; /* Hidden until DM and Store are selected */
+            flex-direction: column;
+            align-items: center;
+        }
+        .calendar {
+            margin-top: 20px;
+        }
+        .calendar table {
+            border-collapse: collapse;
+            margin-bottom: 20px;
+        }
+        .calendar th, .calendar td {
+            border: 1px solid #ddd;
+            padding: 10px;
+            text-align: center;
+        }
+        .available {
+            background-color: #90ee90;
+            cursor: pointer;
+        }
+        .today {
+            background-color: yellow;
+        }
+        .selected {
+            border-radius: 50%;
+            background-color: blue;
+            color: white;
+        }
+        .unclickable {
+            background-color: #f0f0f0;
+            cursor: default;
+        }
+        .unclickable-available {
+            background-color: #90ee90;
+            opacity: 0.5;
+            cursor: default;
+        }
+        .month-header {
+            text-align: center;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>When Can I Book It?</h1>
+    <div class="container" id="selection-container">
+        <h2>Who are you? Select a DM</h2>
+        <select id="dm-select">
+            <option value="">--Select DM--</option>
+        </select>
+
+        <h2 id="store-section" style="display: none;">Select a Store</h2>
+        <select id="store-select" style="display: none;" disabled>
+            <option value="">--Select Store--</option>
+        </select>
+    </div>
+
+    <div class="calendar-container" id="calendar-container">
+        <h2>When Can I Book It?</h2>
+        <div class="lead-time-info">
+            <p>The first available date is based on the selected DM/store. Select your delivery!</p>
+        </div>
+        <div class="calendar" id="previous-month">
+            <div class="month-header" id="prev-month-header"></div>
+            <table id="prev-calendar-table"></table>
+        </div>
+        <div class="calendar" id="current-month">
+            <div class="month-header" id="current-month-header"></div>
+            <table id="current-calendar-table"></table>
+        </div>
+        <div class="calendar" id="next-month">
+            <div class="month-header" id="next-month-header"></div>
+            <table id="next-calendar-table"></table>
+        </div>
+    </div>
+
+    <script>
+        let selectedDate = null;
+        let leadTime = 5; // Default 5 working days lead time
+
+        // Populate DM options (fixed for 3-day lead time, store-based for others)
+        const adminUser = "Admin User"; // Define the admin user
+        const fixedLeadTimeDMs = ["Derek Lee", "Elaine Binkley", "Fraser Mennell", "Guy Taylor", "Michel Durette", "Paul Robichaud", "Shawn Willert", "Sophie Diamond", "Victor Persaud", "William Porter", adminUser];
+        const storeData = {
+            "Robbie Betker": { 9: [424, 471, 472, 606, 715, 1105, 1153, 1157, 1197, 1206, 1244, 1277, 1278, 1317, 1350, 1411, 1476] },
+            "Karolina Garic": { 8: [379, 448, 479, 532, 536, 669, 683, 703, 833, 961, 1233, 1306, 1495, 1557] },
+            "Shawn Haley": {
+                8: [522, 572, 728, 807, 935, 1178, 1458, 1510],
+                9: [524, 548, 778, 912, 1274, 1298, 1305]
+            }
+        };
+
+        const dmSelect = document.getElementById('dm-select');
+        const storeSelect = document.getElementById('store-select');
+        const storeSection = document.getElementById('store-section');
+        const calendarContainer = document.getElementById('calendar-container');
+
+function populateDMs() {
+    // Populate all fixed lead-time DMs except the admin user
+    fixedLeadTimeDMs.forEach(dm => {
+        if (dm !== adminUser) {  // Exclude admin user for now
+            const option = document.createElement('option');
+            option.value = dm;
+            option.textContent = dm;
+            dmSelect.appendChild(option);
+        }
+    });
+
+    // Populate the store-based DMs
+    Object.keys(storeData).forEach(dm => {
+        const option = document.createElement('option');
+        option.value = dm;
+        option.textContent = dm;
+        dmSelect.appendChild(option);
+    });
+
+    // Add the admin user as the last option
+    const adminOption = document.createElement('option');
+    adminOption.value = adminUser;
+    adminOption.textContent = adminUser;
+    dmSelect.appendChild(adminOption);
+}
+
+dmSelect.addEventListener('change', function() {
+    const selectedDM = dmSelect.value;
+    storeSelect.disabled = true;
+    storeSelect.style.display = 'none';
+    storeSection.style.display = 'none';
+    calendarContainer.style.display = 'none'; // Hide the calendar initially
+
+    if (fixedLeadTimeDMs.includes(selectedDM)) {
+        if (selectedDM === adminUser) {
+            leadTime = 5; // Fixed 5 working day lead time for admin
+        } else {
+            leadTime = 7; // Fixed 7 working day lead time for other DMs
+        }
+        calendarContainer.style.display = 'flex'; // Show the calendar directly
+        generateAllCalendars();
+    } else if (storeData[selectedDM]) {
+        storeSelect.disabled = false;
+        storeSelect.style.display = 'block';
+        storeSection.style.display = 'block';
+        storeSelect.innerHTML = '<option value="">--Select Store--</option>';
+        
+        // Populate the stores for the selected DM
+        Object.keys(storeData[selectedDM]).forEach(leadTimeType => {
+            storeData[selectedDM][leadTimeType].forEach(store => {
+                const option = document.createElement('option');
+                option.value = store;
+                option.textContent = `Store ${store}`;
+                option.setAttribute('data-lead-time', leadTimeType);
+                storeSelect.appendChild(option);
+            });
+        });
+    }
+});
+
+storeSelect.addEventListener('change', function() {
+    const selectedStore = storeSelect.value;
+    if (selectedStore) {
+        leadTime = parseInt(storeSelect.options[storeSelect.selectedIndex].getAttribute('data-lead-time'), 10);
+        calendarContainer.style.display = 'flex'; // Only show the calendar after store is selected
+        generateAllCalendars();
+    }
+});
+
+        function isWeekend(date) {
+            const day = date.getDay();
+            return day === 0 || day === 6; // Sunday = 0, Saturday = 6
+        }
+
+function addWorkDays(startDate, workDays) {
+    let date = new Date(startDate);
+
+    // If the start date is a Saturday or Sunday, move it to the following Monday
+    if (date.getDay() === 6) { // If it's Saturday
+        date.setDate(date.getDate() + 2); // Move to Monday
+    } else if (date.getDay() === 0) { // If it's Sunday
+        date.setDate(date.getDate() + 1); // Move to Monday
+    }
+
+    // Subtract 1 workday for weekends because we've already adjusted them
+    while (workDays > 0) {
+        date.setDate(date.getDate() + 1);
+        if (!isWeekend(date)) {
+            workDays--;
+        }
+    }
+    return date;
+}
+
+        function getMonthName(monthIndex) {
+            const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+            return monthNames[monthIndex];
+        }
+
+        function generateCalendar(month, year, tableId, availableDates, clickable = true) {
+            const calendarTable = document.getElementById(tableId);
+            calendarTable.innerHTML = ""; // Clear previous content
+
+            const firstDayOfMonth = new Date(year, month, 1);
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+            const today = new Date();
+
+            // Create table header for days of the week
+            const headerRow = document.createElement("tr");
+            const daysOfWeek = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+            for (const day of daysOfWeek) {
+                const th = document.createElement("th");
+                th.textContent = day;
+                headerRow.appendChild(th);
+            }
+            calendarTable.appendChild(headerRow);
+
+            let row = document.createElement("tr");
+            let date = firstDayOfMonth;
+
+            // Add empty cells before the first day of the month
+            for (let i = 0; i < date.getDay(); i++) {
+                row.appendChild(document.createElement("td"));
+            }
+
+            // Loop through all days of the month
+            for (let day = 1; day <= daysInMonth; day++) {
+                const cell = document.createElement("td");
+                               const currentDate = new Date(year, month, day);
+
+                cell.textContent = day;
+
+                // Highlight today's date
+                if (currentDate.getFullYear() === today.getFullYear() &&
+                    currentDate.getMonth() === today.getMonth() &&
+                    currentDate.getDate() === today.getDate()) {
+                    cell.classList.add("today");
+                }
+
+                // Highlight available booking dates
+                if (availableDates.some(availableDate =>
+                    currentDate.getFullYear() === availableDate.getFullYear() &&
+                    currentDate.getMonth() === availableDate.getMonth() &&
+                    currentDate.getDate() === availableDate.getDate())) {
+                    if (clickable) {
+                        cell.classList.add("available");
+                    } else {
+                        cell.classList.add("unclickable-available");
+                    }
+                }
+
+                // Handle selected date
+                if (selectedDate && currentDate.toDateString() === selectedDate.toDateString()) {
+                    cell.classList.add("selected");
+                }
+
+                // Add click event for current month only
+                if (clickable) {
+                    cell.addEventListener('click', () => {
+                        selectedDate = currentDate;
+                        generateAllCalendars();  // Recalculate all calendars
+                    });
+                } else {
+                    cell.classList.add("unclickable");
+                }
+
+                row.appendChild(cell);
+
+                // Start a new row after Saturday
+                if (currentDate.getDay() === 6) {
+                    calendarTable.appendChild(row);
+                    row = document.createElement("tr");
+                }
+            }
+
+            // Add remaining empty cells to fill the last row
+            if (row.children.length > 0) {
+                calendarTable.appendChild(row);
+            }
+        }
+
+        // Generate all three calendars: previous, current, and next month
+        function generateAllCalendars() {
+            const today = new Date();
+            const leadTimeBase = selectedDate || today;
+            const selectedMonth = leadTimeBase.getMonth();
+            const selectedYear = leadTimeBase.getFullYear();
+
+            // Calculate available dates based on lead time
+            const availableDates = [];
+            for (let i = leadTime; i <= leadTime + 4; i++) {
+                availableDates.push(addWorkDays(leadTimeBase, i));
+            }
+
+            // Split available dates across months
+            const currentMonthDates = availableDates.filter(date => date.getMonth() === selectedMonth);
+            const nextMonthDates = availableDates.filter(date => date.getMonth() !== selectedMonth);
+
+            // Previous month
+            const prevMonth = selectedMonth === 0 ? 11 : selectedMonth - 1;
+            const prevYear = selectedMonth === 0 ? selectedYear - 1 : selectedYear;
+            document.getElementById('prev-month-header').textContent = `${getMonthName(prevMonth)} ${prevYear}`;
+            generateCalendar(prevMonth, prevYear, 'prev-calendar-table', [], false);
+
+            // Current month
+            document.getElementById('current-month-header').textContent = `${getMonthName(selectedMonth)} ${selectedYear}`;
+            generateCalendar(selectedMonth, selectedYear, 'current-calendar-table', currentMonthDates, true);
+
+            // Next month
+            const nextMonth = selectedMonth === 11 ? 0 : selectedMonth + 1;
+            const nextYear = selectedMonth === 11 ? selectedYear + 1 : selectedYear;
+            document.getElementById('next-month-header').textContent = `${getMonthName(nextMonth)} ${nextYear}`;
+            generateCalendar(nextMonth, nextYear, 'next-calendar-table', nextMonthDates, false);
+        }
+
+ // Initialize DMs and calendar generation
+    populateDMs();
+    generateAllCalendars();
+    
+// Add event listener for right-click (contextmenu) on the calendar
+    const calendarTables = document.querySelectorAll('.calendar');
+    calendarTables.forEach(calendar => {
+        calendar.addEventListener('contextmenu', function(event) {
+            event.preventDefault(); // Prevent the default right-click menu
+            selectedDate = null; // Clear the selected date
+            generateAllCalendars(); // Recalculate all calendars to remove the selection
+        });
+    });
+</script>
+
+</body>
+</html>
+
